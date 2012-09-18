@@ -53,14 +53,17 @@ module OAuth
       end
 
       def authorize
+        logger.debug "Starting authorization..."
         if params[:oauth_token]
           @token = ::RequestToken.find_by_token! params[:oauth_token]
           oauth1_authorize
         else
+          logger.debug "Authorizing with oauth2"
           if request.post?
             @authorizer = OAuth::Provider::Authorizer.new current_user, user_authorizes_token?, params
             redirect_to @authorizer.redirect_uri
           else
+            logger.debug "Rendering oauth2 authorization"
             @client_application = ClientApplication.find_by_key! params[:client_id]
             render :action => "oauth2_authorize"
           end
@@ -99,7 +102,9 @@ module OAuth
       protected
 
       def oauth1_authorize
+        logger.debug "OAuth1"
         unless @token
+          logger.debug "Auth failed: no token"
           render :action=>"authorize_failure"
           return
         end
@@ -109,22 +114,29 @@ module OAuth
             if user_authorizes_token?
               @token.authorize!(current_user)
               callback_url  = @token.oob? ? @token.client_application.callback_url : @token.callback_url
+              logger.debug "Callback #{callback_url}"
               @redirect_url = URI.parse(callback_url) unless callback_url.blank?
 
               unless @redirect_url.to_s.blank?
+                logger.debug "Redirecting to #{@redirect_url}"
                 @redirect_url.query = @redirect_url.query.blank? ?
                                       "oauth_token=#{@token.token}&oauth_verifier=#{@token.verifier}" :
                                       @redirect_url.query + "&oauth_token=#{@token.token}&oauth_verifier=#{@token.verifier}"
                 redirect_to @redirect_url.to_s
               else
+                logger.debug "Simple auth success"
                 render :action => "authorize_success"
               end
             else
+              logger.debug "Auth failed: token not authorized for user"
               @token.invalidate!
               render :action => "authorize_failure"
             end
+          else
+            logger.debug "Unexpected request method #{request.pp}"
           end
         else
+          logger.debug "Auth failed: token invalidated"
           render :action => "authorize_failure"
         end
       end
@@ -158,6 +170,7 @@ module OAuth
 
       # should authenticate and return a user if valid password. Override in your own controller
       def authenticate_user(username,password)
+        logger.debug "authenticate_user should be overridden"
         User.authenticate(username,password)
       end
 
@@ -173,6 +186,7 @@ module OAuth
       end
 
       def oauth2_error(error="invalid_grant")
+        logger.debug "OAuth2 error: #{error}"
         render :json=>{:error=>error}.to_json, :status => 400
       end
 
